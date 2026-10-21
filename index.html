@@ -150,6 +150,7 @@
   }
 
 
+
 function origemSistemaPermitida(origem) {
   try {
     const url = new URL(origem);
@@ -163,7 +164,8 @@ function origemSistemaPermitida(origem) {
     return (
       host === "script.google.com" ||
       host === "script.googleusercontent.com" ||
-      host.endsWith(".script.googleusercontent.com")
+      host.endsWith(".script.googleusercontent.com") ||
+      /^n-[a-z0-9-]+-script\.googleusercontent\.com$/.test(host)
     );
   } catch (erro) {
     return false;
