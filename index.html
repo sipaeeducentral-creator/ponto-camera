@@ -213,7 +213,10 @@ function origemSistemaPermitida(origem) {
     }
 
     
-if (!origemSistemaPermitida(evento.origin)) {
+if (
+  !origemSistemaPermitida(evento.origin) &&
+  !String(evento.origin).toLowerCase().endsWith(".script.googleusercontent.com")
+) {
   informar(
     "A origem do sistema de ponto não foi reconhecida. " +
     "Origem recebida: " + String(evento.origin) +
