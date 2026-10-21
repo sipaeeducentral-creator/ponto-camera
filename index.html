@@ -149,12 +149,9 @@
     }
   }
 
+
 function origemSistemaPermitida(origem) {
   try {
-    if (typeof origem !== "string" || !origem) {
-      return false;
-    }
-
     const url = new URL(origem);
 
     if (url.protocol !== "https:") {
