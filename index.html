@@ -1,0 +1,301 @@
+
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#17365d">
+  <title>Ponto Eletrônico Escolar — Câmera</title>
+  <style>
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      padding: 20px;
+      background: #f2f5f9;
+      color: #202b3c;
+      font-family: Arial, sans-serif;
+    }
+
+    main {
+      max-width: 520px;
+      margin: 0 auto;
+      padding: 22px;
+      background: #fff;
+      border-radius: 16px;
+      box-shadow: 0 4px 20px #00000012;
+    }
+
+    h1 { font-size: 23px; margin-top: 0; }
+    p { line-height: 1.5; }
+
+    video {
+      display: block;
+      width: 100%;
+      max-height: 65vh;
+      background: #17202b;
+      border-radius: 12px;
+      object-fit: cover;
+    }
+
+    button {
+      width: 100%;
+      padding: 15px;
+      margin-top: 12px;
+      border: 0;
+      border-radius: 9px;
+      background: #17365d;
+      color: white;
+      font-size: 16px;
+      font-weight: bold;
+      cursor: pointer;
+    }
+
+    button:disabled { opacity: .5; cursor: not-allowed; }
+
+    #mensagem {
+      margin-top: 16px;
+      padding: 12px;
+      border-radius: 8px;
+      background: #edf2f7;
+      line-height: 1.5;
+      overflow-wrap: anywhere;
+    }
+
+    .erro { background: #fff0f0 !important; color: #9d2020; }
+    .sucesso { background: #eaf7ed !important; color: #176b32; }
+    .aviso { background: #fff7df !important; color: #70530a; }
+
+    .nota { color: #586579; font-size: 13px; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Ponto Eletrônico Escolar</h1>
+  <p>Ative a câmera, posicione o rosto e tire a fotografia para registrar o ponto.</p>
+
+  <video id="video" autoplay playsinline muted></video>
+
+  <button id="ativar" type="button">Ativar câmera</button>
+  <button id="capturar" type="button" disabled>
+    Tirar foto e enviar para o sistema
+  </button>
+
+  <div id="mensagem" role="status" aria-live="polite">
+    Aguardando ativação da câmera.
+  </div>
+
+  <p class="nota">
+    A fotografia será encaminhada à página do sistema que abriu esta tela.
+    O registro só será confirmado após a validação pelo servidor.
+  </p>
+</main>
+
+<script>
+(function () {
+  "use strict";
+
+  const video = document.getElementById("video");
+  const ativar = document.getElementById("ativar");
+  const capturar = document.getElementById("capturar");
+  const mensagem = document.getElementById("mensagem");
+
+  let fluxo = null;
+  let enviando = false;
+
+  function informar(texto, tipo) {
+    mensagem.textContent = texto;
+    mensagem.className = tipo || "";
+  }
+
+  function pararCamera() {
+    if (fluxo) {
+      fluxo.getTracks().forEach(function (trilha) {
+        trilha.stop();
+      });
+    }
+    fluxo = null;
+    video.srcObject = null;
+    capturar.disabled = true;
+  }
+
+  ativar.addEventListener("click", async function () {
+    if (!window.opener || window.opener.closed) {
+      informar(
+        "Abra esta página pelo botão de câmera do sistema de ponto. " +
+        "Não é possível registrar diretamente por esta página.",
+        "erro"
+      );
+      return;
+    }
+
+    if (!navigator.mediaDevices ||
+        !navigator.mediaDevices.getUserMedia) {
+      informar(
+        "O navegador não disponibilizou a câmera. Abra esta página " +
+        "pelo endereço HTTPS e tente novamente.",
+        "erro"
+      );
+      return;
+    }
+
+    ativar.disabled = true;
+    informar("Solicitando acesso à câmera...", "aviso");
+
+    try {
+      try {
+        fluxo = await navigator.mediaDevices.getUserMedia({
+          audio: false,
+          video: {
+            facingMode: { ideal: "user" },
+            width: { ideal: 640 },
+            height: { ideal: 480 }
+          }
+        });
+      } catch (erroInicial) {
+        fluxo = await navigator.mediaDevices.getUserMedia({
+          audio: false,
+          video: true
+        });
+      }
+
+      video.srcObject = fluxo;
+      await video.play();
+
+      capturar.disabled = false;
+      ativar.textContent = "Câmera ativada";
+      informar(
+        "Câmera ativada. Ao tirar a foto, você também precisará autorizar a localização.",
+        "sucesso"
+      );
+    } catch (erro) {
+      pararCamera();
+      ativar.disabled = false;
+
+      let texto = "Não foi possível ativar a câmera.";
+      if (erro && erro.name === "NotAllowedError") {
+        texto = "O acesso à câmera foi negado. Verifique as permissões do navegador.";
+      } else if (erro && erro.name === "NotFoundError") {
+        texto = "Nenhuma câmera foi encontrada neste aparelho.";
+      } else if (erro && erro.name === "NotReadableError") {
+        texto = "A câmera pode estar sendo usada por outro aplicativo.";
+      }
+
+      informar(texto + " Detalhe: " +
+        (erro && erro.message ? erro.message : "sem detalhes"), "erro");
+    }
+  });
+
+  capturar.addEventListener("click", function () {
+    if (enviando || !fluxo || !video.videoWidth) {
+      informar("Ative a câmera antes de tirar a foto.", "erro");
+      return;
+    }
+
+    if (!window.opener || window.opener.closed) {
+      informar("A janela original do sistema não está disponível.", "erro");
+      return;
+    }
+
+    if (!navigator.geolocation) {
+      informar("Este navegador não disponibilizou a localização.", "erro");
+      return;
+    }
+
+    enviando = true;
+    capturar.disabled = true;
+    ativar.disabled = true;
+
+    informar("Obtendo a localização do aparelho...", "aviso");
+
+    navigator.geolocation.getCurrentPosition(
+      function (posicao) {
+        try {
+          const larguraOriginal = video.videoWidth;
+          const alturaOriginal = video.videoHeight;
+          const escala = Math.min(
+            1,
+            640 / larguraOriginal,
+            480 / alturaOriginal
+          );
+
+          const canvas = document.createElement("canvas");
+          canvas.width = Math.round(larguraOriginal * escala);
+          canvas.height = Math.round(alturaOriginal * escala);
+
+          const contexto = canvas.getContext("2d");
+          contexto.drawImage(
+            video, 0, 0, canvas.width, canvas.height
+          );
+
+          const foto = canvas.toDataURL("image/jpeg", 0.75);
+
+          if (foto.length > 5 * 1024 * 1024) {
+            throw new Error(
+              "A fotografia ficou muito grande. Tente novamente."
+            );
+          }
+
+          const dados = {
+            type: "PONTO_CAMERA_FOTO",
+            foto: foto,
+            latitude: posicao.coords.latitude,
+            longitude: posicao.coords.longitude,
+            precisao: posicao.coords.accuracy,
+            dispositivo: navigator.userAgent.slice(0, 100)
+          };
+
+          let origemDestino = "*";
+          try {
+            if (document.referrer) {
+              origemDestino = new URL(document.referrer).origin;
+            }
+          } catch (erroOrigem) {}
+
+          window.opener.postMessage(dados, origemDestino);
+
+          informar(
+            "Fotografia e localização enviadas à janela do sistema. " +
+            "Aguarde a confirmação do registro no sistema original.",
+            "sucesso"
+          );
+
+          pararCamera();
+        } catch (erro) {
+          informar(
+            erro && erro.message
+              ? erro.message
+              : "Não foi possível preparar a fotografia.",
+            "erro"
+          );
+        } finally {
+          enviando = false;
+          ativar.disabled = false;
+          capturar.disabled = !fluxo;
+        }
+      },
+      function (erro) {
+        enviando = false;
+        ativar.disabled = false;
+        capturar.disabled = !fluxo;
+
+        informar(
+          "Não foi possível obter a localização. Autorize o acesso " +
+          "à localização e tente novamente. " +
+          (erro && erro.message ? erro.message : ""),
+          "erro"
+        );
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 20000,
+        maximumAge: 0
+      }
+    );
+  });
+
+  window.addEventListener("beforeunload", pararCamera);
+})();
+</script>
+</body>
+</html>
