@@ -215,14 +215,16 @@ function origemSistemaPermitida(origem) {
       return;
     }
 
-    if (!origemSistemaPermitida(evento.origin)) {
-      informar(
-        "A origem do sistema de ponto não foi reconhecida. " +
-        "Feche esta janela e abra novamente pelo sistema.",
-        "erro"
-      );
-      return;
-    }
+    
+if (!origemSistemaPermitida(evento.origin)) {
+  informar(
+    "A origem do sistema de ponto não foi reconhecida. " +
+    "Origem recebida: " + String(evento.origin) +
+    ". Feche esta janela e informe este endereço ao suporte.",
+    "erro"
+  );
+  return;
+}
 
     /*
      * A origem confiável vem do navegador, pelo evento recebido.
