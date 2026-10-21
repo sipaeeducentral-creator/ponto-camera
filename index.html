@@ -194,7 +194,9 @@
     }
   }
 
-  window.addEventListener("message", function (evento) {
+    window.addEventListener("message", function (evento) {
+    console.log("Origem recebida:", evento.origin);
+    console.log("Mensagem recebida:", evento.data);
     if (!janelaOriginalDisponivel()) {
       return;
     }
