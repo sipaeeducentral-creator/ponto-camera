@@ -149,28 +149,35 @@
     }
   }
 
+  /*
+   * Valida a origem do Google Apps Script.
+   * Inclui o endereço dinâmico n-...-script.googleusercontent.com
+   * utilizado pelo Google ao executar aplicativos do Apps Script.
+   */
+  function origemSistemaPermitida(origem) {
+    try {
+      const url = new URL(origem);
 
+      if (url.protocol !== "https:") {
+        return false;
+      }
 
-function origemSistemaPermitida(origem) {
-  try {
-    const url = new URL(origem);
+      if (url.port || url.username || url.password) {
+        return false;
+      }
 
-    if (url.protocol !== "https:") {
+      const host = url.hostname.toLowerCase();
+
+      return (
+        host === "script.google.com" ||
+        host === "script.googleusercontent.com" ||
+        host.endsWith(".script.googleusercontent.com") ||
+        /^n-[a-z0-9-]+-script\.googleusercontent\.com$/.test(host)
+      );
+    } catch (erro) {
       return false;
     }
-
-    const host = url.hostname.toLowerCase();
-
-    return (
-      host === "script.google.com" ||
-      host === "script.googleusercontent.com" ||
-      host.endsWith(".script.googleusercontent.com") ||
-      /^n-[a-z0-9-]+-script\.googleusercontent\.com$/.test(host)
-    );
-  } catch (erro) {
-    return false;
   }
-}
 
   function avisarSistemaQueEstaPronta() {
     if (!janelaOriginalDisponivel()) {
@@ -182,11 +189,6 @@ function origemSistemaPermitida(origem) {
     }
 
     try {
-      /*
-       * A mensagem READY não contém foto, localização ou token.
-       * O sistema principal deverá validar a origem e a janela
-       * que enviou esta mensagem antes de responder.
-       */
       window.opener.postMessage(
         { type: TIPO_PRONTO },
         "*"
@@ -199,9 +201,11 @@ function origemSistemaPermitida(origem) {
     }
   }
 
-    window.addEventListener("message", function (evento) {
-    console.log("Origem recebida:", evento.origin);
-    console.log("Mensagem recebida:", evento.data);
+  /*
+   * Recebe a configuração exclusivamente da janela que abriu
+   * esta página e valida a origem antes de aceitar a comunicação.
+   */
+  window.addEventListener("message", function (evento) {
     if (!janelaOriginalDisponivel()) {
       return;
     }
@@ -210,28 +214,23 @@ function origemSistemaPermitida(origem) {
       return;
     }
 
-    if (evento.data?.type !== TIPO_CONFIG) {
+    if (!evento.data || evento.data.type !== TIPO_CONFIG) {
       return;
     }
 
-    
-if (
-  !origemSistemaPermitida(evento.origin) &&
-  !String(evento.origin).toLowerCase().endsWith(".script.googleusercontent.com")
-) {
-  informar(
-    "A origem do sistema de ponto não foi reconhecida. " +
-    "Origem recebida: " + String(evento.origin) +
-    ". Feche esta janela e informe este endereço ao suporte.",
-    "erro"
-  );
-  return;
-}
+    if (!origemSistemaPermitida(evento.origin)) {
+      sistemaConfirmado = false;
+      origemSistema = null;
 
-    /*
-     * A origem confiável vem do navegador, pelo evento recebido.
-     * Não usamos document.referrer nem um destino "*" para a foto.
-     */
+      informar(
+        "A origem do sistema de ponto não foi reconhecida. " +
+        "Origem recebida: " + String(evento.origin) +
+        ". Feche esta janela e informe este endereço ao suporte.",
+        "erro"
+      );
+      return;
+    }
+
     origemSistema = evento.origin;
     sistemaConfirmado = true;
 
@@ -271,8 +270,10 @@ if (
       return;
     }
 
-    if (!navigator.mediaDevices ||
-        !navigator.mediaDevices.getUserMedia) {
+    if (
+      !navigator.mediaDevices ||
+      !navigator.mediaDevices.getUserMedia
+    ) {
       informar(
         "O navegador não disponibilizou a câmera. " +
         "Verifique se está usando o endereço HTTPS.",
@@ -340,9 +341,11 @@ if (
       return;
     }
 
-    if (!sistemaConfirmado ||
-        !origemSistema ||
-        !janelaOriginalDisponivel()) {
+    if (
+      !sistemaConfirmado ||
+      !origemSistema ||
+      !janelaOriginalDisponivel()
+    ) {
       informar(
         "A comunicação com o sistema não está disponível. " +
         "Feche esta janela e abra novamente pelo sistema de ponto.",
@@ -428,8 +431,8 @@ if (
           };
 
           /*
-           * Envia a fotografia exclusivamente para a origem
-           * confirmada durante a comunicação inicial.
+           * A fotografia só é enviada para a origem que foi
+           * validada durante a comunicação inicial.
            */
           window.opener.postMessage(dados, origemSistema);
 
