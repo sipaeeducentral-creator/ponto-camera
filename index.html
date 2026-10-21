@@ -6,6 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#17365d">
   <title>Ponto Eletrônico Escolar — Câmera</title>
+
   <style>
     * { box-sizing: border-box; }
 
@@ -51,7 +52,10 @@
       cursor: pointer;
     }
 
-    button:disabled { opacity: .5; cursor: not-allowed; }
+    button:disabled {
+      opacity: .5;
+      cursor: not-allowed;
+    }
 
     #mensagem {
       margin-top: 16px;
@@ -62,32 +66,55 @@
       overflow-wrap: anywhere;
     }
 
-    .erro { background: #fff0f0 !important; color: #9d2020; }
-    .sucesso { background: #eaf7ed !important; color: #176b32; }
-    .aviso { background: #fff7df !important; color: #70530a; }
+    .erro {
+      background: #fff0f0 !important;
+      color: #9d2020;
+    }
 
-    .nota { color: #586579; font-size: 13px; }
+    .sucesso {
+      background: #eaf7ed !important;
+      color: #176b32;
+    }
+
+    .aviso {
+      background: #fff7df !important;
+      color: #70530a;
+    }
+
+    .nota {
+      color: #586579;
+      font-size: 13px;
+    }
   </style>
 </head>
+
 <body>
 <main>
   <h1>Ponto Eletrônico Escolar</h1>
-  <p>Ative a câmera, posicione o rosto e tire a fotografia para registrar o ponto.</p>
+
+  <p>
+    Ative a câmera, posicione o rosto e tire a fotografia
+    para registrar o ponto.
+  </p>
 
   <video id="video" autoplay playsinline muted></video>
 
-  <button id="ativar" type="button">Ativar câmera</button>
+  <button id="ativar" type="button">
+    Ativar câmera
+  </button>
+
   <button id="capturar" type="button" disabled>
     Tirar foto e enviar para o sistema
   </button>
 
   <div id="mensagem" role="status" aria-live="polite">
-    Aguardando ativação da câmera.
+    Verificando comunicação com o sistema de ponto...
   </div>
 
   <p class="nota">
-    A fotografia será encaminhada à página do sistema que abriu esta tela.
-    O registro só será confirmado após a validação pelo servidor.
+    A fotografia e a localização serão encaminhadas à janela
+    do sistema que abriu esta página. O registro depende da
+    validação do servidor.
   </p>
 </main>
 
@@ -100,13 +127,107 @@
   const capturar = document.getElementById("capturar");
   const mensagem = document.getElementById("mensagem");
 
+  const TIPO_CONFIG = "PONTO_CAMERA_CONFIG";
+  const TIPO_PRONTO = "PONTO_CAMERA_READY";
+  const TIPO_FOTO = "PONTO_CAMERA_FOTO";
+
   let fluxo = null;
   let enviando = false;
+  let origemSistema = null;
+  let sistemaConfirmado = false;
 
   function informar(texto, tipo) {
     mensagem.textContent = texto;
     mensagem.className = tipo || "";
   }
+
+  function janelaOriginalDisponivel() {
+    try {
+      return Boolean(window.opener && !window.opener.closed);
+    } catch (erro) {
+      return false;
+    }
+  }
+
+  function origemSistemaPermitida(origem) {
+    try {
+      const url = new URL(origem);
+
+      if (url.protocol !== "https:") {
+        return false;
+      }
+
+      const host = url.hostname.toLowerCase();
+
+      return host === "script.google.com" ||
+             host === "script.googleusercontent.com" ||
+             host.endsWith(".script.googleusercontent.com");
+    } catch (erro) {
+      return false;
+    }
+  }
+
+  function avisarSistemaQueEstaPronta() {
+    if (!janelaOriginalDisponivel()) {
+      informar(
+        "Abra esta página pelo botão de câmera do sistema de ponto.",
+        "erro"
+      );
+      return;
+    }
+
+    try {
+      /*
+       * A mensagem READY não contém foto, localização ou token.
+       * O sistema principal deverá validar a origem e a janela
+       * que enviou esta mensagem antes de responder.
+       */
+      window.opener.postMessage(
+        { type: TIPO_PRONTO },
+        "*"
+      );
+    } catch (erro) {
+      informar(
+        "Não foi possível iniciar a comunicação com o sistema.",
+        "erro"
+      );
+    }
+  }
+
+  window.addEventListener("message", function (evento) {
+    if (!janelaOriginalDisponivel()) {
+      return;
+    }
+
+    if (evento.source !== window.opener) {
+      return;
+    }
+
+    if (evento.data?.type !== TIPO_CONFIG) {
+      return;
+    }
+
+    if (!origemSistemaPermitida(evento.origin)) {
+      informar(
+        "A origem do sistema de ponto não foi reconhecida. " +
+        "Feche esta janela e abra novamente pelo sistema.",
+        "erro"
+      );
+      return;
+    }
+
+    /*
+     * A origem confiável vem do navegador, pelo evento recebido.
+     * Não usamos document.referrer nem um destino "*" para a foto.
+     */
+    origemSistema = evento.origin;
+    sistemaConfirmado = true;
+
+    informar(
+      "Comunicação com o sistema estabelecida. Você pode ativar a câmera.",
+      "sucesso"
+    );
+  });
 
   function pararCamera() {
     if (fluxo) {
@@ -114,17 +235,26 @@
         trilha.stop();
       });
     }
+
     fluxo = null;
     video.srcObject = null;
     capturar.disabled = true;
   }
 
   ativar.addEventListener("click", async function () {
-    if (!window.opener || window.opener.closed) {
+    if (!janelaOriginalDisponivel()) {
       informar(
-        "Abra esta página pelo botão de câmera do sistema de ponto. " +
-        "Não é possível registrar diretamente por esta página.",
+        "Abra esta página pelo botão de câmera do sistema de ponto.",
         "erro"
+      );
+      return;
+    }
+
+    if (!sistemaConfirmado || !origemSistema) {
+      informar(
+        "Aguardando confirmação da comunicação com o sistema. " +
+        "Feche esta janela e abra novamente pelo botão de câmera.",
+        "aviso"
       );
       return;
     }
@@ -132,8 +262,8 @@
     if (!navigator.mediaDevices ||
         !navigator.mediaDevices.getUserMedia) {
       informar(
-        "O navegador não disponibilizou a câmera. Abra esta página " +
-        "pelo endereço HTTPS e tente novamente.",
+        "O navegador não disponibilizou a câmera. " +
+        "Verifique se está usando o endereço HTTPS.",
         "erro"
       );
       return;
@@ -164,8 +294,9 @@
 
       capturar.disabled = false;
       ativar.textContent = "Câmera ativada";
+
       informar(
-        "Câmera ativada. Ao tirar a foto, você também precisará autorizar a localização.",
+        "Câmera ativada. Ao tirar a foto, autorize também a localização.",
         "sucesso"
       );
     } catch (erro) {
@@ -173,16 +304,21 @@
       ativar.disabled = false;
 
       let texto = "Não foi possível ativar a câmera.";
+
       if (erro && erro.name === "NotAllowedError") {
-        texto = "O acesso à câmera foi negado. Verifique as permissões do navegador.";
+        texto =
+          "O acesso à câmera foi negado. Verifique as permissões do navegador.";
       } else if (erro && erro.name === "NotFoundError") {
         texto = "Nenhuma câmera foi encontrada neste aparelho.";
       } else if (erro && erro.name === "NotReadableError") {
         texto = "A câmera pode estar sendo usada por outro aplicativo.";
       }
 
-      informar(texto + " Detalhe: " +
-        (erro && erro.message ? erro.message : "sem detalhes"), "erro");
+      informar(
+        texto + " Detalhe: " +
+        (erro && erro.message ? erro.message : "sem detalhes"),
+        "erro"
+      );
     }
   });
 
@@ -192,13 +328,22 @@
       return;
     }
 
-    if (!window.opener || window.opener.closed) {
-      informar("A janela original do sistema não está disponível.", "erro");
+    if (!sistemaConfirmado ||
+        !origemSistema ||
+        !janelaOriginalDisponivel()) {
+      informar(
+        "A comunicação com o sistema não está disponível. " +
+        "Feche esta janela e abra novamente pelo sistema de ponto.",
+        "erro"
+      );
       return;
     }
 
     if (!navigator.geolocation) {
-      informar("Este navegador não disponibilizou a localização.", "erro");
+      informar(
+        "Este navegador não disponibilizou a localização.",
+        "erro"
+      );
       return;
     }
 
@@ -211,8 +356,15 @@
     navigator.geolocation.getCurrentPosition(
       function (posicao) {
         try {
+          if (!janelaOriginalDisponivel()) {
+            throw new Error(
+              "A janela original do sistema foi fechada."
+            );
+          }
+
           const larguraOriginal = video.videoWidth;
           const alturaOriginal = video.videoHeight;
+
           const escala = Math.min(
             1,
             640 / larguraOriginal,
@@ -220,15 +372,33 @@
           );
 
           const canvas = document.createElement("canvas");
+
           canvas.width = Math.round(larguraOriginal * escala);
           canvas.height = Math.round(alturaOriginal * escala);
 
           const contexto = canvas.getContext("2d");
+
+          if (!contexto) {
+            throw new Error(
+              "Não foi possível preparar a fotografia."
+            );
+          }
+
           contexto.drawImage(
-            video, 0, 0, canvas.width, canvas.height
+            video,
+            0,
+            0,
+            canvas.width,
+            canvas.height
           );
 
           const foto = canvas.toDataURL("image/jpeg", 0.75);
+
+          if (!foto.startsWith("data:image/jpeg;base64,")) {
+            throw new Error(
+              "A fotografia não foi gerada no formato esperado."
+            );
+          }
 
           if (foto.length > 5 * 1024 * 1024) {
             throw new Error(
@@ -237,7 +407,7 @@
           }
 
           const dados = {
-            type: "PONTO_CAMERA_FOTO",
+            type: TIPO_FOTO,
             foto: foto,
             latitude: posicao.coords.latitude,
             longitude: posicao.coords.longitude,
@@ -245,18 +415,15 @@
             dispositivo: navigator.userAgent.slice(0, 100)
           };
 
-          let origemDestino = "*";
-          try {
-            if (document.referrer) {
-              origemDestino = new URL(document.referrer).origin;
-            }
-          } catch (erroOrigem) {}
-
-          window.opener.postMessage(dados, origemDestino);
+          /*
+           * Envia a fotografia exclusivamente para a origem
+           * confirmada durante a comunicação inicial.
+           */
+          window.opener.postMessage(dados, origemSistema);
 
           informar(
             "Fotografia e localização enviadas à janela do sistema. " +
-            "Aguarde a confirmação do registro no sistema original.",
+            "Confira a confirmação do registro na tela original.",
             "sucesso"
           );
 
@@ -265,7 +432,7 @@
           informar(
             erro && erro.message
               ? erro.message
-              : "Não foi possível preparar a fotografia.",
+              : "Não foi possível enviar a fotografia.",
             "erro"
           );
         } finally {
@@ -274,6 +441,7 @@
           capturar.disabled = !fluxo;
         }
       },
+
       function (erro) {
         enviando = false;
         ativar.disabled = false;
@@ -286,6 +454,7 @@
           "erro"
         );
       },
+
       {
         enableHighAccuracy: true,
         timeout: 20000,
@@ -295,6 +464,11 @@
   });
 
   window.addEventListener("beforeunload", pararCamera);
+
+  /*
+   * Inicia a comunicação ao carregar a página.
+   */
+  avisarSistemaQueEstaPronta();
 })();
 </script>
 </body>
